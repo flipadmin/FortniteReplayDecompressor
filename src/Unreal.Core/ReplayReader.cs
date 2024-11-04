@@ -53,6 +53,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
     protected ILogger _logger;
     protected T Replay { get; set; }
     protected ParseMode _parseMode;
+    protected string[]? _eventTypesToParse;
     protected bool IsDebugMode => _parseMode == ParseMode.Debug;
 
     protected NetGuidCache _netGuidCache;
@@ -88,10 +89,11 @@ public abstract class ReplayReader<T> where T : Replay, new()
     /// </summary>
     private uint?[] IgnoringChannels = new uint?[DefaultMaxChannelSize]; // channel index, actorguid
 
-    public ReplayReader(ILogger logger, ParseMode mode)
+    public ReplayReader(ILogger logger, ParseMode mode, string[]? eventTypesToParse = null)
     {
         _logger = logger;
         _parseMode = mode;
+        _eventTypesToParse = eventTypesToParse;
 
         _netGuidCache = new NetGuidCache();
         _netFieldParser = new NetFieldParser(_netGuidCache, mode);
@@ -307,7 +309,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
     /// </summary>
     public virtual void ReadReplayChunks(FArchive archive)
     {
-        while (!archive.AtEnd())
+        while (!archive.AtEnd() && !archive.IsError)
         {
             var chunkType = archive.ReadUInt32AsEnum<ReplayChunkType>();
             var chunkSize = archive.ReadInt32();
@@ -376,7 +378,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
 
         using var decrypted = DecryptBuffer(archive, info.Length);
         using var binaryArchive = Decompress(decrypted);
-        while (!binaryArchive.AtEnd())
+        while (!binaryArchive.AtEnd() && !binaryArchive.IsError)
         {
             ReadDemoFrameIntoPlaybackPackets(binaryArchive);
         }
@@ -1287,7 +1289,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
         }
 
         //  Read chunks of actor content
-        while (!bunch.Archive.AtEnd())
+        while (!bunch.Archive.AtEnd() && !bunch.Archive.IsError)
         {
             var repObject = ReadContentBlockPayload(bunch, out var bObjectDeleted, out var bHasRepLayout, out var payload);
 
@@ -1324,7 +1326,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
                     break;
                 }
 
-                if (repObject is null || bunch.Archive.AtEnd())
+                if (repObject is null || bunch.Archive.AtEnd() || bunch.Archive.IsError)
                 {
                     // Nothing else in this block, continue on (should have been a delete or create block)
                     continue;
@@ -1365,6 +1367,11 @@ public abstract class ReplayReader<T> where T : Replay, new()
             }
 
             ReceiveExternalData(netFieldExportGroup, bunch.ChIndex);
+        }
+
+        if (archive.IsError)
+        {
+            return false;
         }
 
         // moved from ReadFieldHeaderAndPayload to here to save a search for ClassNetCache if not needed
@@ -2013,7 +2020,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
         bool bHasPartialCustomExportsFinalBit = !(bitReader.EngineNetworkVersion < EngineNetworkVersionHistory.CustomExports);
 
         //var rejectedChannels = new Dictionary<uint, uint>();
-        while (!bitReader.AtEnd())
+        while (!bitReader.AtEnd() && !bitReader.IsError)
         {
             // For demo backwards compatibility, old replays still have this bit
             if (bitReader.EngineNetworkVersion < EngineNetworkVersionHistory.HISTORY_ACKS_INCLUDED_IN_HEADER)
