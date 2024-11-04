@@ -8,6 +8,7 @@ using FortniteReplayReader.Models.NetFieldExports.Weapons;
 using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Unreal.Core;
@@ -23,7 +24,8 @@ public class ReplayReader : Unreal.Core.ReplayReader<FortniteReplay>
 {
     private FortniteReplayBuilder Builder;
 
-    public ReplayReader(ILogger logger = null, ParseMode parseMode = ParseMode.Minimal) : base(logger, parseMode)
+    public ReplayReader(ILogger logger = null, ParseMode parseMode = ParseMode.Minimal, string[]? eventsTypesToParse = null)
+        : base(logger, parseMode, eventsTypesToParse)
     {
     }
 
@@ -176,6 +178,12 @@ public class ReplayReader : Unreal.Core.ReplayReader<FortniteReplay>
         };
 
         _logger?.LogDebug("Encountered event {group} ({metadata}) at {startTime} of size {sizeInBytes}", info.Group, info.Metadata, info.StartTime, info.SizeInBytes);
+
+        if (_eventTypesToParse != null && !_eventTypesToParse.Contains(info.Group) && !_eventTypesToParse.Contains(info.Metadata))
+        {
+            _logger?.LogDebug("Skipped event {group} ({metadata}) of size {sizeInBytes}", info.Group, info.Metadata, info.SizeInBytes);
+            return;
+        }
 
         using var decryptedArchive = DecryptBuffer(archive, info.SizeInBytes);
 
