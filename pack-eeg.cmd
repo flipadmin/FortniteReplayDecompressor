@@ -3,3 +3,4 @@ rem dotnet build -c Release .\src\FortniteReplayReader\FortniteReplayReader.cspr
 dotnet pack -c Release .\src\Unreal.Encryption\Unreal.Encryption.csproj -p:PackageVersion=2.2.1-eeg
 dotnet pack -c Release .\src\Unreal.Core\Unreal.Core.csproj -p:PackageVersion=2.2.1-eeg
 dotnet pack -c Release .\src\FortniteReplayReader\FortniteReplayReader.csproj -p:PackageVersion=2.2.1-eeg
+dotnet pack -c Release .\src\OozSharp\OozSharp.csproj -p:PackageVersion=2.2.1-eeg
