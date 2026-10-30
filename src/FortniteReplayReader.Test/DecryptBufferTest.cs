@@ -1,5 +1,4 @@
 using FortniteReplayReader.Test.Mocks;
-using System.IO;
 using Xunit;
 
 namespace FortniteReplayReader.Test;
@@ -25,7 +24,7 @@ public class DecryptBufferTest
 
         using var archive = new Unreal.Core.BinaryReader(new MemoryStream(rawData))
         {
-            EngineNetworkVersion = Unreal.Core.Models.Enums.EngineNetworkVersionHistory.LATEST, // 16
+            EngineNetworkVersion = Unreal.Core.Models.Enums.EngineNetworkVersionHistory.HISTORY_REPLAY_DORMANCY,
         };
         var reader = new MockReplayReader()
         {

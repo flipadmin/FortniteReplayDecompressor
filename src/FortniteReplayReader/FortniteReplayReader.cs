@@ -1,4 +1,6 @@
-﻿using FortniteReplayReader.Exceptions;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+using FortniteReplayReader.Exceptions;
 using FortniteReplayReader.Extensions;
 using FortniteReplayReader.Models;
 using FortniteReplayReader.Models.Enums;
@@ -6,10 +8,6 @@ using FortniteReplayReader.Models.Events;
 using FortniteReplayReader.Models.NetFieldExports;
 using FortniteReplayReader.Models.NetFieldExports.Weapons;
 using Microsoft.Extensions.Logging;
-using System;
-using System.IO;
-using System.Security.Cryptography;
-using System.Text.RegularExpressions;
 using Unreal.Core;
 using Unreal.Core.Contracts;
 using Unreal.Core.Exceptions;
@@ -29,8 +27,13 @@ public class ReplayReader : Unreal.Core.ReplayReader<FortniteReplay>
 
     public FortniteReplay ReadReplay(string fileName)
     {
-        using var stream = File.Open(fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        return ReadReplay(stream);
+        var bytes = File.ReadAllBytes(fileName);
+        using var archive = new Unreal.Core.BinaryReader(bytes);
+
+        Builder = new FortniteReplayBuilder();
+        ReadReplay(archive);
+
+        return Builder.Build(Replay);
     }
 
     public FortniteReplay ReadReplay(Stream stream)
@@ -283,6 +286,12 @@ public class ReplayReader : Unreal.Core.ReplayReader<FortniteReplay>
                     archive.SkipBytes(36);
                 }
             }
+
+            if ((int)archive.EngineNetworkVersion >= 34)
+            {
+                archive.SkipBytes(80);
+            }
+
             ParsePlayer(archive, elim.EliminatedInfo, version);
             ParsePlayer(archive, elim.EliminatorInfo, version);
 
@@ -320,7 +329,7 @@ public class ReplayReader : Unreal.Core.ReplayReader<FortniteReplay>
     {
         if (!Replay.Info.IsEncrypted)
         {
-            return new Unreal.Core.BinaryReader(archive.ReadBytes(size))
+            return new Unreal.Core.BinaryReader(archive.ReadMemory(size))
             {
                 EngineNetworkVersion = Replay.Header.EngineNetworkVersion,
                 NetworkVersion = Replay.Header.NetworkVersion,
@@ -330,18 +339,11 @@ public class ReplayReader : Unreal.Core.ReplayReader<FortniteReplay>
         }
 
         var key = Replay.Info.EncryptionKey;
-        var encryptedBytes = archive.ReadBytes(size);
+        var encryptedBytes = archive.ReadMemory(size);
 
-        using var aesCryptoServiceProvider = new AesCryptoServiceProvider
-        {
-            KeySize = key.Length * 8,
-            Key = key.ToArray(),
-            Mode = CipherMode.ECB,
-            Padding = PaddingMode.PKCS7
-        };
-
-        using var cryptoTransform = aesCryptoServiceProvider.CreateDecryptor();
-        var decryptedArray = cryptoTransform.TransformFinalBlock(encryptedBytes.ToArray(), 0, encryptedBytes.Length);
+        using var aes = Aes.Create();
+        aes.Key = key.ToArray();
+        var decryptedArray = aes.DecryptEcb(encryptedBytes.Span, PaddingMode.PKCS7);
 
         return new Unreal.Core.BinaryReader(decryptedArray.AsMemory())
         {

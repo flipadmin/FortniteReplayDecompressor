@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace Unreal.Core.Models;
+﻿namespace Unreal.Core.Models;
 
 /// <summary>
 /// see https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/Core/Public/Math/Vector.h#L29
@@ -22,7 +20,7 @@ public class FVector
 
     public override string ToString() => $"X: {X}, Y: {Y}, Z: {Z}";
 
-    public float Size() => (float) Math.Sqrt(X * X + Y * Y + Z * Z);
+    public float Size() => (float)Math.Sqrt(X * X + Y * Y + Z * Z);
     public double DistanceTo(FVector vector) => Math.Sqrt(DistanceSquared(vector));
 
     private double DistanceSquared(FVector vector) => Math.Pow(vector.X - X, 2) + Math.Pow(vector.Y - Y, 2) + Math.Pow(vector.Z - Z, 2);

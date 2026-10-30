@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using System.Text;
 using Unreal.Core.Contracts;
 using Unreal.Core.Models.Enums;
 
@@ -61,7 +58,7 @@ public class DebuggingObject : IProperty
     {
         _reader.Reset();
 
-        return _reader.ReadBytes((int) Math.Ceiling(_reader.GetBitsLeft() / 8.0)).ToArray();
+        return _reader.ReadBytes((int)Math.Ceiling(_reader.GetBitsLeft() / 8.0)).ToArray();
     }
 
     private string AsFString()
@@ -168,7 +165,7 @@ public class DebuggingObject : IProperty
                 return null;
             }
 
-            return ((UnrealNames) nameIndex).ToString();
+            return ((UnrealNames)nameIndex).ToString();
         }
 
         var inString = _reader.ReadFString();
@@ -299,7 +296,7 @@ public class DebuggingObject : IProperty
                 continue;
             }
 
-            _reader.SkipBits((int) numBits);
+            _reader.SkipBits((int)numBits);
 
             if (_reader.IsError)
             {
@@ -323,7 +320,7 @@ public class DebuggingObject : IProperty
 
             _reader.Reset();
 
-            var iProperty = (IProperty) Activator.CreateInstance(type);
+            var iProperty = (IProperty)Activator.CreateInstance(type);
 
             iProperty.Serialize(_reader);
 
