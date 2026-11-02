@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.Linq;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Emit;
 using Unreal.Core.Attributes;
@@ -120,7 +117,7 @@ public class NetFieldParser
 
             _objects[group.TypeId] = new SingleInstanceExport
             {
-                Instance = (INetFieldExportGroup) Activator.CreateInstance(group.Type),
+                Instance = (INetFieldExportGroup)Activator.CreateInstance(group.Type),
                 ChangedProperties = new List<NetFieldInfo>(group.Properties.Length),
             };
         }
@@ -150,7 +147,7 @@ public class NetFieldParser
         }
         gen.Emit(OpCodes.Ret);
 
-        return (Action<INetFieldExportGroup, object>) setterMethod.CreateDelegate(typeof(Action<INetFieldExportGroup, object>));
+        return (Action<INetFieldExportGroup, object>)setterMethod.CreateDelegate(typeof(Action<INetFieldExportGroup, object>));
 
         FieldInfo GetBackingField(PropertyInfo property)
         {
@@ -333,7 +330,13 @@ public class NetFieldParser
             RepLayoutCmdType.RepMovement => netFieldInfo.MovementAttribute != null ? netBitReader.SerializeRepMovement(
                 locationQuantizationLevel: netFieldInfo.MovementAttribute.LocationQuantizationLevel,
                 rotationQuantizationLevel: netFieldInfo.MovementAttribute.RotationQuantizationLevel,
-                velocityQuantizationLevel: netFieldInfo.MovementAttribute.VelocityQuantizationLevel) : netBitReader.SerializeRepMovement(),
+                velocityQuantizationLevel: netFieldInfo.MovementAttribute.VelocityQuantizationLevel)
+                // TODO: support custom FEngineNetworkCustomVersion::Guid
+                : netBitReader.SerializeRepMovement(
+                    rotationQuantizationLevel: (netBitReader.NetworkReplayVersion != null
+                        && (netBitReader.NetworkReplayVersion.Changelist >= 54618515u
+                            || (netBitReader.NetworkReplayVersion.Branch?.Contains("+Release-41.") ?? false)))
+                        ? RotatorQuantization.ShortComponents : RotatorQuantization.ByteComponents),
             _ => ReadDataType(netFieldInfo.Attribute.Type, netBitReader, netFieldInfo.PropertyInfo.PropertyType),
         };
 
@@ -540,17 +543,17 @@ public class NetFieldParser
 
                 if (export == null)
                 {
-                    netBitReader.SkipBits((int) numBits);
+                    netBitReader.SkipBits((int)numBits);
                     continue;
                 }
 
                 try
                 {
-                    netBitReader.SetTempEnd((int) numBits, FBitArchiveEndIndex.READ_ARRAY_FIELD);
+                    netBitReader.SetTempEnd((int)numBits, FBitArchiveEndIndex.READ_ARRAY_FIELD);
 
                     if (groupInfo != null)
                     {
-                        ReadField((INetFieldExportGroup) data, export, handle, netfieldExportGroup, netBitReader, singleInstance: false);
+                        ReadField((INetFieldExportGroup)data, export, handle, netfieldExportGroup, netBitReader, singleInstance: false);
                     }
                     else
                     {
@@ -568,7 +571,7 @@ public class NetFieldParser
     }
 
     /// <summary>
-    /// Create the object associated with the NetFieldExportGroup. 
+    /// Create the object associated with the NetFieldExportGroup.
     /// </summary>
     /// <param name="group"></param>
     /// <returns></returns>

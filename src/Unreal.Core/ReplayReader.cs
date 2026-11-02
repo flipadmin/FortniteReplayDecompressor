@@ -1,7 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
-using System;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
+using Microsoft.Extensions.Logging;
 using Unreal.Core.Contracts;
 using Unreal.Core.Exceptions;
 using Unreal.Core.Extensions;
@@ -17,7 +15,7 @@ namespace Unreal.Core;
 public abstract class ReplayReader<T> where T : Replay, new()
 {
     /// <summary>
-    /// const int32 UNetConnection::DEFAULT_MAX_CHANNEL_SIZE = 32767; 
+    /// const int32 UNetConnection::DEFAULT_MAX_CHANNEL_SIZE = 32767;
     /// see https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/Engine/Private/NetConnection.cpp#L84
     /// </summary>
     protected const int DefaultMaxChannelSize = 32767;
@@ -102,7 +100,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
     }
 
     /// <summary>
-    /// Parses the entire replay. 
+    /// Parses the entire replay.
     /// It first parses the info section, and then all chunks.
     /// </summary>
     public virtual T ReadReplay(FArchive archive)
@@ -257,10 +255,9 @@ public abstract class ReplayReader<T> where T : Replay, new()
         else
         {
             // Clear all of our mappings, since we're starting over
-            _netGuidCache.NetFieldExportGroupMap.Clear();
-            _netGuidCache.NetFieldExportGroupIndexToGroup.Clear();
+            _netGuidCache.ClearExportGroups();
 
-            // SerializeNetFieldExportGroupMap 
+            // SerializeNetFieldExportGroupMap
             // https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/Engine/Private/PackageMapClient.cpp#L1289
             var numNetFieldExportGroups = binaryArchive.ReadUInt32();
             for (var i = 0; i < numNetFieldExportGroups; i++)
@@ -268,7 +265,6 @@ public abstract class ReplayReader<T> where T : Replay, new()
                 var group = ReadNetFieldExportGroupMap(binaryArchive);
 
                 // Add the export group to the map
-                _netGuidCache.NetFieldExportGroupIndexToGroup[group.PathNameIndex] = group.PathName;
                 _netGuidCache.AddToExportGroupMap(group.PathName, group);
             }
         }
@@ -319,7 +315,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
             var chunkSize = archive.ReadInt32();
             var offset = archive.Position;
 
-            if (chunkSize <= 0 || (long) chunkSize + offset > int.MaxValue)
+            if (chunkSize <= 0 || (long)chunkSize + offset > int.MaxValue)
             {
                 _logger?.LogError("Invalid chunk size ({chunkSize} for chunk {chunkType}) at offset {offset}. Stopping the parsing...", chunkSize, chunkType, archive.Position);
                 archive.SetError();
@@ -359,7 +355,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
 
     /// <summary>
     /// see https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/NetworkReplayStreaming/LocalFileNetworkReplayStreaming/Private/LocalFileNetworkReplayStreaming.cpp#L318
-    /// </summary> 
+    /// </summary>
     public virtual void ReadReplayData(FArchive archive, int fallbackChunkSize)
     {
         var info = new ReplayDataInfo();
@@ -367,7 +363,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
         {
             info.Start = archive.ReadUInt32();
             info.End = archive.ReadUInt32();
-            info.Length = (int) archive.ReadUInt32();
+            info.Length = (int)archive.ReadUInt32();
         }
         else
         {
@@ -418,14 +414,16 @@ public abstract class ReplayReader<T> where T : Replay, new()
             _logger?.LogError("Header.Version < MIN_NETWORK_DEMO_VERSION. Header.Version: {}, MIN_NETWORK_DEMO_VERSION: {}", header.NetworkVersion, NetworkVersionHistory.HISTORY_EXTRA_VERSION);
             throw new InvalidReplayException($"Header.Version < MIN_NETWORK_DEMO_VERSION. Header.Version: {header.NetworkVersion}, MIN_NETWORK_DEMO_VERSION: {NetworkVersionHistory.HISTORY_EXTRA_VERSION}");
         }
+
         if (header.NetworkVersion >= NetworkVersionHistory.HISTORY_USE_CUSTOM_VERSION)
         {
             var customVersionCount = archive.ReadInt32();
 
-            // version guid -> 16 bytes
-            // version -> 4 bytes
+            //var fguid = archive.ReadGUID();
+            //var latestVersion = archive.ReadInt32();
             archive.SkipBytes(customVersionCount * 20);
         }
+
         header.NetworkChecksum = archive.ReadUInt32();
         header.EngineNetworkVersion = archive.ReadUInt32AsEnum<EngineNetworkVersionHistory>();
 
@@ -515,6 +513,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
         _cmdReader.EngineNetworkVersion = header.EngineNetworkVersion;
         _cmdReader.NetworkVersion = header.NetworkVersion;
         _cmdReader.ReplayHeaderFlags = header.Flags;
+        _cmdReader.NetworkReplayVersion = archive.NetworkReplayVersion;
     }
 
 
@@ -611,7 +610,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
         }
 
         // https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/Engine/Private/DemoNetDriver.cpp#L3338
-        ReceivedRawPacket(archive.ReadBytes(bufferSize));
+        ReceivedRawPacket(archive.ReadMemory(bufferSize));
         return PacketState.Success;
     }
 
@@ -635,7 +634,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
 
             _netGuidCache.ExternalData[netGuid] = new ExternalData()
             {
-                Archive = new BinaryReader(archive.ReadBytes((externalDataNumBits + 7) >> 3))
+                Archive = new BinaryReader(archive.ReadMemory((externalDataNumBits + 7) >> 3))
                 {
                     NetworkReplayVersion = archive.NetworkReplayVersion,
                     EngineNetworkVersion = archive.EngineNetworkVersion,
@@ -699,7 +698,14 @@ public abstract class ReplayReader<T> where T : Replay, new()
             var netFieldExport = ReadNetFieldExport(archive);
             if (netFieldExport != null)
             {
-                group.NetFieldExports[netFieldExport.Handle] = netFieldExport;
+                if (group.IsValidIndex(netFieldExport.Handle))
+                {
+                    group.NetFieldExports[netFieldExport.Handle] = netFieldExport;
+                }
+                else
+                {
+                    _logger?.LogWarning("ReadNetFieldExportGroupMap: Invalid NetFieldExport Handle {handle} for group {pathname} with length {length}", netFieldExport.Handle, group.PathName, group.NetFieldExportsLength);
+                }
             }
         }
         return group;
@@ -725,7 +731,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
         for (var i = 0; i < numGuids; i++)
         {
             var size = archive.ReadInt32();
-            _exportReader.FillBuffer(archive.ReadBytes(size));
+            _exportReader.FillBuffer(archive.ReadMemory(size));
             InternalLoadObject(_exportReader, true);
         }
     }
@@ -758,6 +764,17 @@ public abstract class ReplayReader<T> where T : Replay, new()
                     };
                     _netGuidCache.AddToExportGroupMap(pathName, group);
                 }
+                else if (numExports > group.NetFieldExportsLength)
+                {
+                    // Allow our exports to dynamically grow as more are encountered
+                    var oldExports = group.NetFieldExports;
+
+                    group.NetFieldExports = new NetFieldExport[numExports];
+                    group.NetFieldExportsLength = numExports;
+
+                    Array.Copy(oldExports, group.NetFieldExports, oldExports.Length);
+                }
+
                 //GuidCache->NetFieldExportGroupPathToIndex.Add(PathName, PathNameIndex);
                 //GuidCache->NetFieldExportGroupIndexToGroup.Add(PathNameIndex, NetFieldExportGroup);
             }
@@ -769,7 +786,14 @@ public abstract class ReplayReader<T> where T : Replay, new()
             var netField = ReadNetFieldExport(archive);
             if (group != null && netField != null)
             {
-                group.NetFieldExports[netField.Handle] = netField;
+                if (group.IsValidIndex(netField.Handle))
+                {
+                    group.NetFieldExports[netField.Handle] = netField;
+                }
+                else
+                {
+                    _logger?.LogWarning("ReceiveNetFieldExports: Invalid NetFieldExport Handle {} for group {} with length {}", netField.Handle, group.PathName, group.NetFieldExportsLength);
+                }
             }
             else
             {
@@ -802,7 +826,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
             var numStreamingLevels = archive.ReadIntPacked();
             for (var i = 0; i < numStreamingLevels; i++)
             {
-                // levelName 
+                // levelName
                 archive.ReadFString();
             }
         }
@@ -837,7 +861,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
             if (skipExternalOffset > 0)
             {
                 // ignore it for now
-                archive.SkipBytes((int) skipExternalOffset);
+                archive.SkipBytes((int)skipExternalOffset);
             }
             // else skip externalOffset
         }
@@ -1029,7 +1053,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
                             return;
 
                         }
-                        // Incomplete partial bunch. 
+                        // Incomplete partial bunch.
                     }
                     PartialBunch = null;
                 }
@@ -1172,6 +1196,18 @@ public abstract class ReplayReader<T> where T : Replay, new()
     /// <summary>
     /// https://github.com/EpicGames/UnrealEngine/blob/8776a8e357afff792806b997fbbd8e715111a271/Engine/Source/Runtime/Engine/Private/PackageMapClient.cpp#L490
     /// </summary>
+    public virtual FVector ConditionallySerializeQuantizedVector(FBitArchive archive, double defaultX, double defaultY, double defaultZ)
+    {
+        var bWasSerialized = archive.ReadBit();
+        if (bWasSerialized)
+        {
+            var bShouldQuantize = (archive.EngineNetworkVersion < EngineNetworkVersionHistory.HISTORY_OPTIONALLY_QUANTIZE_SPAWN_INFO) || archive.ReadBit();
+            return bShouldQuantize ? archive.ReadPackedVector(10, 24) : archive.ReadFVector();
+        }
+
+        return new FVector(defaultX, defaultY, defaultZ);
+    }
+
     public virtual FVector ConditionallySerializeQuantizedVector(FBitArchive archive, FVector defaultVector)
     {
         var bWasSerialized = archive.ReadBit();
@@ -1222,7 +1258,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
                     inActor.Level = InternalLoadObject(bunch.Archive, false);
                 }
 
-                inActor.Location = ConditionallySerializeQuantizedVector(bunch.Archive, new FVector(0, 0, 0));
+                inActor.Location = ConditionallySerializeQuantizedVector(bunch.Archive, 0, 0, 0);
 
                 if (bunch.Archive.ReadBit())
                 {
@@ -1233,8 +1269,8 @@ public abstract class ReplayReader<T> where T : Replay, new()
                     inActor.Rotation = new FRotator(0, 0, 0);
                 }
 
-                inActor.Scale = ConditionallySerializeQuantizedVector(bunch.Archive, new FVector(1, 1, 1));
-                inActor.Velocity = ConditionallySerializeQuantizedVector(bunch.Archive, new FVector(0, 0, 0));
+                inActor.Scale = ConditionallySerializeQuantizedVector(bunch.Archive, 1, 1, 1);
+                inActor.Velocity = ConditionallySerializeQuantizedVector(bunch.Archive, 0, 0, 0);
             }
 
             channel.Actor = inActor;
@@ -1257,12 +1293,25 @@ public abstract class ReplayReader<T> where T : Replay, new()
         {
             var repObject = ReadContentBlockPayload(bunch, out var bObjectDeleted, out var bHasRepLayout, out var payload);
 
+            // Infinite-loop guard (matches UE UActorChannel::ProcessBunch, which checks Bunch.IsError()
+            // immediately after ReadContentBlockPayload). A desynced/overrun content block leaves the
+            // archive errored with its read position frozen below the end (BitReader no-ops further reads
+            // once IsError is set), so AtEnd() never trips and the `payload is null` continue below spins
+            // forever — observed hanging the full 180s parse timeout on certain build-41 replays. The
+            // IsError check farther down was unreachable in that path because the null-payload continue
+            // fired first.
+            if (bunch.Archive.IsError)
+            {
+                _logger?.LogWarning("UActorChannel::ProcessBunch: ReadContentBlockPayload errored; aborting bunch {}", bunchIndex);
+                break;
+            }
+
             if (payload is null)
             {
                 continue;
             }
 
-            bunch.Archive.SetTempEnd((int) payload, FBitArchiveEndIndex.CONTENT_BLOCK_PAYLOAD);
+            bunch.Archive.SetTempEnd((int)payload, FBitArchiveEndIndex.CONTENT_BLOCK_PAYLOAD);
 
             try
             {
@@ -1345,7 +1394,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
                 continue;
             }
 
-            archive.SetTempEnd((int) payload, FBitArchiveEndIndex.FIELD_HEADER_PAYLOAD);
+            archive.SetTempEnd((int)payload, FBitArchiveEndIndex.FIELD_HEADER_PAYLOAD);
             try
             {
                 if (fieldCache == null)
@@ -1498,7 +1547,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
         if (export != null)
         {
             var numBits = reader.GetBitsLeft();
-            _cmdReader.FillBuffer(reader.ReadBits(numBits), numBits);
+            _cmdReader.FillBitsFrom(reader, numBits);
             export.Serialize(_cmdReader);
 
             if (_cmdReader.IsError)
@@ -1708,7 +1757,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
             hasdata = true;
             try
             {
-                _cmdReader.FillBuffer(archive.ReadBits(numBits), (int) numBits);
+                _cmdReader.FillBitsFrom(archive, (int)numBits);
                 if (!_netFieldParser.ReadField(exportGroup, export, handle, group, _cmdReader))
                 {
                     // Set field incompatible since we couldnt (or didnt want to) parse it.
@@ -1723,7 +1772,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
 #if DEBUG
                     Debug("failed-properties", $"Property {export.Name} (handle: {handle}, path: {group.PathName}) caused error when reading (bits: {numBits}, group: {group.PathName})");
                     _cmdReader.Reset();
-                    Debug($"cmd-{export.Name}-{numBits}", "cmds", _cmdReader.ReadBytes(Math.Max((int) Math.Ceiling(_cmdReader.GetBitsLeft() / 8.0), 1)));
+                    Debug($"cmd-{export.Name}-{numBits}", "cmds", _cmdReader.ReadBits(_cmdReader.GetBitsLeft()));
 #endif
                     continue;
                 }
@@ -1736,7 +1785,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
 #if DEBUG
                     Debug("failed-properties", $"Property {export.Name} (handle: {handle}, path: {group.PathName}) didnt read proper number of bits: {(_cmdReader.LastBit - _cmdReader.GetBitsLeft())} out of {numBits}");
                     _cmdReader.Reset();
-                    Debug($"cmd-{export.Name}-{numBits}", "cmds", _cmdReader.ReadBytes(Math.Max((int) Math.Ceiling(_cmdReader.GetBitsLeft() / 8.0), 1)));
+                    Debug($"cmd-{export.Name}-{numBits}", "cmds", _cmdReader.ReadBits(_cmdReader.GetBitsLeft()));
 #endif
                     continue;
                 }
@@ -1776,7 +1825,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
         }
 
         // const int32 NetFieldExportHandle = Bunch.ReadInt(FMath::Max(NetFieldExportGroup->NetFieldExports.Num(), 2));
-        var netFieldExportHandle = archive.ReadSerializedInt(Math.Max((int) group.NetFieldExportsLength, 2));
+        var netFieldExportHandle = archive.ReadSerializedInt(Math.Max((int)group.NetFieldExportsLength, 2));
         if (archive.IsError)
         {
             payload = null;
@@ -1786,7 +1835,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
         }
 
         // const FNetFieldExport& NetFieldExport = NetFieldExportGroup->NetFieldExports[NetFieldExportHandle];
-        outField = group.NetFieldExports[(int) netFieldExportHandle];
+        outField = group.NetFieldExports[(int)netFieldExportHandle];
 
         payload = archive.ReadIntPacked();
         if (archive.IsError)
@@ -1797,7 +1846,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
             return false;
         }
 
-        if (!archive.CanRead((int) payload))
+        if (!archive.CanRead((int)payload))
         {
             payload = null;
             return false;
@@ -1901,20 +1950,42 @@ public abstract class ReplayReader<T> where T : Replay, new()
     /// <summary>
     /// see https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/Engine/Private/NetConnection.cpp#L1007
     /// </summary>
+    public virtual void ReceivedRawPacket(ReadOnlyMemory<byte> packet)
+    {
+        var span = packet.Span;
+        var lastByte = span[^1];
+
+        if (lastByte != 0)
+        {
+            var bitSize = (packet.Length * 8) - 1 - (System.Numerics.BitOperations.LeadingZeroCount((uint)lastByte) - 24);
+
+            _packetReader.FillBuffer(packet, bitSize);
+            try
+            {
+                ReceivedPacket(_packetReader);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "ReceivedPacket failed, index: {}", packetIndex);
+            }
+        }
+        else
+        {
+            _logger?.LogError("Malformed packet: Received packet with 0's in last byte of packet, index: {}", packetIndex);
+            throw new MalformedPacketException("Malformed packet: Received packet with 0's in last byte of packet");
+        }
+    }
+
+    /// <summary>
+    /// see https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/Engine/Private/NetConnection.cpp#L1007
+    /// </summary>
     public virtual void ReceivedRawPacket(ReadOnlySpan<byte> packet)
     {
         var lastByte = packet[^1];
 
         if (lastByte != 0)
         {
-            var bitSize = (packet.Length * 8) - 1;
-
-            // Bit streaming, starts at the Least Significant Bit, and ends at the MSB.
-            while (!((lastByte & 0x80) >= 1))
-            {
-                lastByte *= 2;
-                bitSize--;
-            }
+            var bitSize = (packet.Length * 8) - 1 - (System.Numerics.BitOperations.LeadingZeroCount((uint)lastByte) - 24);
 
             _packetReader.FillBuffer(packet, bitSize);
             try
@@ -1945,6 +2016,9 @@ public abstract class ReplayReader<T> where T : Replay, new()
         // https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/Engine/Private/NetConnection.cpp#1549
         InPacketId++;
 
+        // We want to be able to read replays that do not support export extentions.
+        bool bHasPartialCustomExportsFinalBit = !(bitReader.EngineNetworkVersion < EngineNetworkVersionHistory.CustomExports);
+
         //var rejectedChannels = new Dictionary<uint, uint>();
         while (!bitReader.AtEnd() && !bitReader.IsError)
         {
@@ -1958,7 +2032,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
             // FInBunch
             // https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/Engine/Private/DataBunch.cpp#L18
             // https://github.com/EpicGames/UnrealEngine/blob/70bc980c6361d9a7d23f6d23ffe322a2d6ef16fb/Engine/Source/Runtime/Engine/Public/Net/DataBunch.h#L168
-            var bunch = new DataBunch();
+            var bunch = _currentBunch;
 
             var bControl = bitReader.ReadBit();
             bunch.PacketId = InPacketId;
@@ -1972,7 +2046,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
             }
             else
             {
-                bunch.CloseReason = bunch.bClose ? (ChannelCloseReason) bitReader.ReadSerializedInt((int) ChannelCloseReason.MAX) : ChannelCloseReason.Destroyed;
+                bunch.CloseReason = bunch.bClose ? (ChannelCloseReason)bitReader.ReadSerializedInt((int)ChannelCloseReason.MAX) : ChannelCloseReason.Destroyed;
                 bunch.bDormant = bunch.CloseReason == ChannelCloseReason.Dormancy;
             }
 
@@ -2008,6 +2082,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
             }
 
             bunch.bPartialInitial = bunch.bPartial && bitReader.ReadBit();
+            bunch.bHasPartialCustomExportsFinalBit = bunch.bPartial && bHasPartialCustomExportsFinalBit ? bitReader.ReadBit() : false;
             bunch.bPartialFinal = bunch.bPartial && bitReader.ReadBit();
 
             var chType = ChannelType.None;
@@ -2015,7 +2090,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
 
             if (bitReader.EngineNetworkVersion < EngineNetworkVersionHistory.HISTORY_CHANNEL_NAMES)
             {
-                var type = bitReader.ReadSerializedInt((int) ChannelType.MAX);
+                var type = bitReader.ReadSerializedInt((int)ChannelType.MAX);
                 //    chType = (bunch.bReliable || bunch.bOpen) ? (ChannelType)type : ChannelType.None;
 
                 //    chName = chType switch
@@ -2050,7 +2125,7 @@ public abstract class ReplayReader<T> where T : Replay, new()
             // If there's an existing channel and the bunch specified it's channel type, make sure they match.
             // Channel && (Bunch.ChName != NAME_None) && (Bunch.ChName != Channel->ChName)
 
-            var bunchDataBits = (int) bitReader.ReadSerializedInt(MaxPacketSizeInBits);
+            var bunchDataBits = (int)bitReader.ReadSerializedInt(MaxPacketSizeInBits);
 
             if (bunch.bPartial)
             {
@@ -2065,6 +2140,12 @@ public abstract class ReplayReader<T> where T : Replay, new()
             {
                 bitReader.SetTempEnd(bunchDataBits, FBitArchiveEndIndex.BUNCH);
                 bunch.Archive = bitReader;
+            }
+
+            if (bitReader.IsError)
+            {
+                _logger?.LogWarning("ReceivedPacket: bunch ({bunchDataBits} bits) overflows packet {packetIndex}, aborting packet.", bunchDataBits, packetIndex);
+                break;
             }
 
             bunchIndex++;
@@ -2196,8 +2277,8 @@ public abstract class ReplayReader<T> where T : Replay, new()
 
     /// <summary>
     /// After receiving propteries for this <paramref name="exportGroup"/> indicate wheter it can be ignored for the rest of the replay (on the given channel)
-    /// or if it can be ignored for the rest of the replay. 
-    /// Useful to minimize the parsing, e.g. if you're only interested in the initial values and not subsequent updates. 
+    /// or if it can be ignored for the rest of the replay.
+    /// Useful to minimize the parsing, e.g. if you're only interested in the initial values and not subsequent updates.
     /// </summary>
     protected virtual bool IgnoreGroupOnChannel(uint channelIndex, INetFieldExportGroup exportGroup) => true;
 

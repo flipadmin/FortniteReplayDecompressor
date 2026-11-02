@@ -1,11 +1,10 @@
-﻿using System;
-using Unreal.Core.Models;
+﻿using Unreal.Core.Models;
 using Unreal.Core.Models.Enums;
 
 namespace Unreal.Core;
 
 /// <summary>
-/// A <see cref="BitReader"/> used for reading everything related to RepLayout. 
+/// A <see cref="BitReader"/> used for reading everything related to RepLayout.
 /// see https://github.com/EpicGames/UnrealEngine/blob/bf95c2cbc703123e08ab54e3ceccdd47e48d224a/Engine/Source/Runtime/CoreUObject/Public/UObject/CoreNet.h#L303
 /// </summary>
 public class NetBitReader : BitReader
@@ -60,7 +59,6 @@ public class NetBitReader : BitReader
             bRepPhysics = bRepPhysics,
             Location = SerializePropertyQuantizedVector(locationQuantizationLevel),
             Rotation = rotationQuantizationLevel == RotatorQuantization.ByteComponents ? ReadRotation() : ReadRotationShort(),
-
             LinearVelocity = SerializePropertyQuantizedVector(velocityQuantizationLevel)
         };
 
@@ -77,6 +75,15 @@ public class NetBitReader : BitReader
         if (bRepServerHandle)
         {
             repMovement.ServerPhysicsHandle = ReadIntPacked();
+        }
+
+        if (EngineNetworkVersion >= EngineNetworkVersionHistory.RepMoveOptionalAcceleration)
+        {
+            repMovement.bRepAcceleration = ReadBit();
+            if (repMovement.bRepAcceleration)
+            {
+                repMovement.Acceleration = SerializePropertyQuantizedVector(velocityQuantizationLevel);
+            }
         }
 
         return repMovement;
@@ -119,17 +126,17 @@ public class NetBitReader : BitReader
         var serIntMax = (1 << (numBits - 0));
 
         var delta = ReadSerializedInt(serIntMax);
-        float unscaledValue = (int) delta - bias;
+        float unscaledValue = (int)delta - bias;
 
         if (maxValue > maxBitValue)
         {
-            var invScale = maxValue / (float) maxBitValue;
+            var invScale = maxValue / (float)maxBitValue;
 
             return unscaledValue * invScale;
         }
         else
         {
-            var scale = maxBitValue / (float) maxValue;
+            var scale = maxBitValue / (float)maxValue;
             var invScale = 1f / scale;
 
             return unscaledValue * invScale;
@@ -146,7 +153,7 @@ public class NetBitReader : BitReader
     /// </summary>
     public int SerializePropertyByte(int enumMaxValue) =>
         //Ar.SerializeBits( Data, Enum ? FMath::CeilLogTwo(Enum->GetMaxEnumValue()) : 8 );
-        ReadBitsToInt(enumMaxValue > 0 ? (int) Math.Ceiling(Math.Log2(enumMaxValue)) : 8);
+        ReadBitsToInt(enumMaxValue > 0 ? (int)Math.Ceiling(Math.Log2(enumMaxValue)) : 8);
 
     public int SerializePropertyByte() => ReadByte();
 
@@ -189,7 +196,7 @@ public class NetBitReader : BitReader
     /// </summary>
     public string SerializePropertyNetId()
     {
-        // Use highest value for type for other (out of engine) oss type 
+        // Use highest value for type for other (out of engine) oss type
         const byte typeHashOther = 31;
 
         var encodingFlags = ReadByteAsEnum<UniqueIdEncodingFlags>();
@@ -205,7 +212,7 @@ public class NetBitReader : BitReader
         }
 
         // Non empty and hex encoded
-        var typeHash = ((int) (encodingFlags & UniqueIdEncodingFlags.TypeMask)) >> 3;
+        var typeHash = ((int)(encodingFlags & UniqueIdEncodingFlags.TypeMask)) >> 3;
         if (typeHash == 0)
         {
             // If no type was encoded, assume default
